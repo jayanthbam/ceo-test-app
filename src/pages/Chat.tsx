@@ -30,7 +30,6 @@ export default function Chat() {
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text).catch(() => {
-      // fallback for older browsers
       const ta = document.createElement("textarea");
       ta.value = text;
       document.body.appendChild(ta);
@@ -38,6 +37,25 @@ export default function Chat() {
       document.execCommand("copy");
       document.body.removeChild(ta);
     });
+  }
+
+  function downloadAsFile(text: string, filename: string) {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function promptStats(text: string) {
+    const lines = text.split("\n").length;
+    const tokens = Math.round(text.length / 4);
+    const sections = (text.match(/^\d+\./gm) || []).length;
+    return { lines, tokens, sections };
   }
 
   // Initial load
@@ -239,19 +257,19 @@ export default function Chat() {
                 )}
                 {verbose && m.systemPrompt && (
                   <details className="system-prompt">
-                    <summary>📋 System Prompt</summary>
+                    <summary>System Prompt</summary>
                     <div className="prompt-actions">
                       <button
                         className="prompt-action-btn"
                         onClick={() => copyToClipboard(m.systemPrompt!)}
                       >
-                        📋 Copy
+                        Copy
                       </button>
                       <button
                         className="prompt-action-btn"
                         onClick={() => setFullPromptModal(m.systemPrompt!)}
                       >
-                        🔍 View Full
+                        View Full
                       </button>
                     </div>
                     <pre>{m.systemPrompt}</pre>
@@ -293,13 +311,32 @@ export default function Chat() {
         <div className="modal-overlay" onClick={() => setFullPromptModal(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>📋 System Prompt (Full)</h2>
+              <div className="modal-title">
+                <h2>System Prompt</h2>
+                <span className="modal-stats">
+                  {(() => {
+                    const s = promptStats(fullPromptModal);
+                    return `${s.sections} sections · ${s.lines.toLocaleString()} lines · ~${s.tokens.toLocaleString()} tokens`;
+                  })()}
+                </span>
+              </div>
               <div className="modal-actions">
                 <button
-                  className="prompt-action-btn"
+                  className="modal-btn"
                   onClick={() => copyToClipboard(fullPromptModal)}
                 >
-                  📋 Copy
+                  Copy
+                </button>
+                <button
+                  className="modal-btn"
+                  onClick={() =>
+                    downloadAsFile(
+                      fullPromptModal,
+                      `system-prompt-${new Date().toISOString().slice(0, 10)}.txt`
+                    )
+                  }
+                >
+                  Download
                 </button>
                 <button
                   className="modal-close"
