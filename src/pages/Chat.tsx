@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ChatMessage, Lead } from "../lib/api";
+import { renderMessageText, formatRelativeTime } from "../lib/format";
 
 type ChatState = "loading" | "ready" | "error";
 
@@ -27,6 +28,9 @@ export default function Chat() {
   const [fullPromptModal, setFullPromptModal] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const [atBottom, setAtBottom] = useState(true);
+  const [now, setNow] = useState(Date.now());
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text).catch(() => {
@@ -80,10 +84,31 @@ export default function Chat() {
       });
   }, [teamId, leadId, phone]);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages (only if user is at the bottom)
   useEffect(() => {
+    if (atBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, atBottom]);
+
+  // Re-tick relative times every 30s
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Track scroll position to show/hide "jump to latest" pill
+  function handleMessagesScroll() {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setAtBottom(dist < 80);
+  }
+
+  function jumpToLatest() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    setAtBottom(true);
+  }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -152,10 +177,26 @@ export default function Chat() {
     }
   }
 
+  const QUICK_REPLIES = [
+    "hey, is the 1 bed still available?",
+    "what's the pet policy?",
+    "can i come see it this week?",
+    "is parking included?",
+  ];
+
   if (state === "loading") {
     return (
       <div className="container">
-        <div className="card">Loading…</div>
+        <div className="card chat-card">
+          <div className="chat-loading">
+            <div className="chat-loading-dots">
+              <span />
+              <span />
+              <span />
+            </div>
+            Spinning up a session
+          </div>
+        </div>
       </div>
     );
   }
@@ -163,9 +204,9 @@ export default function Chat() {
   if (state === "error") {
     return (
       <div className="container">
-        <div className="card">
-          <div className="error">⚠️ {error}</div>
-          <button onClick={() => navigate("/")}>← Back</button>
+        <div className="card chat-card" style={{ padding: "32px" }}>
+          <div className="error">{error}</div>
+          <button onClick={() => navigate("/")}>← Back to start</button>
         </div>
       </div>
     );
@@ -175,21 +216,49 @@ export default function Chat() {
     <div className="container">
       <div className="card chat-card">
         <header className="chat-header">
-          <div>
-            <h1>📱 Chatting as: {lead?.firstName} {lead?.lastName}</h1>
-            <div className="lead-meta">
-              {teamName && <span>🏢 {teamName}</span>}
-              {lead?.propertyName && <span> · 🏠 {lead.propertyName}</span>}
-              {lead?.pets && <span> · 🐾 {lead.pets}</span>}
-              {lead?.bedroomPreference && <span> · 🛏️ {lead.bedroomPreference}</span>}
-              {lead?.budget && <span> · 💰 {lead.budget}</span>}
+          <div className="chat-header-row">
+            <div className="chat-header-info">
+              <h1 className="chat-title">
+                Chatting as <span className="accent">{lead?.firstName} {lead?.lastName}</span>
+              </h1>
+              <div className="lead-meta">
+                {teamName && <span>{teamName}</span>}
+                {lead?.propertyName && (
+                  <>
+                    <span className="lead-meta-dot" />
+                    <span>{lead.propertyName}</span>
+                  </>
+                )}
+                {lead?.bedroomPreference && (
+                  <>
+                    <span className="lead-meta-dot" />
+                    <span>{lead.bedroomPreference}</span>
+                  </>
+                )}
+                {lead?.budget && (
+                  <>
+                    <span className="lead-meta-dot" />
+                    <span>{lead.budget}</span>
+                  </>
+                )}
+                {lead?.pets && (
+                  <>
+                    <span className="lead-meta-dot" />
+                    <span>{lead.pets}</span>
+                  </>
+                )}
+              </div>
+              {hasToursAhead && <div className="next-tour">Next tour: {nextTour}</div>}
             </div>
-            {hasToursAhead && <div className="next-tour">📅 Next tour: {nextTour}</div>}
+            <div className="top-right">
+              <span className="status-dot" />
+              <span className="status-pill">Live</span>
+            </div>
           </div>
         </header>
 
         <div className="toolbar">
-          <label>
+          <label className={`toolbar-pill ${verbose ? "active" : ""}`}>
             <input
               type="checkbox"
               checked={verbose}
@@ -197,10 +266,7 @@ export default function Chat() {
             />
             Verbose
           </label>
-          <button onClick={handleReset} disabled={resetting}>
-            {resetting ? "Resetting…" : "Reset History"}
-          </button>
-          <label>
+          <label className={`toolbar-pill ${sendAsHuman ? "active" : ""}`}>
             <input
               type="checkbox"
               checked={sendAsHuman}
@@ -208,13 +274,42 @@ export default function Chat() {
             />
             Send as Human
           </label>
-          <button onClick={handleQuit}>Quit</button>
+          <span className="toolbar-spacer" />
+          <button
+            className="toolbar-btn danger"
+            onClick={handleReset}
+            disabled={resetting}
+          >
+            {resetting ? "Resetting…" : "Reset"}
+          </button>
+          <button className="toolbar-btn" onClick={handleQuit}>
+            Quit
+          </button>
         </div>
 
-        <div className="messages">
+        <div className="messages" ref={messagesScrollRef} onScroll={handleMessagesScroll}>
           {messages.length === 0 && (
-            <div className="empty">
-              <em>No messages yet. Type something to start the conversation.</em>
+            <div className="empty-state">
+              <div className="empty-eyebrow">Empty room</div>
+              <h2 className="empty-title">
+                Say something <span className="accent">as the lead</span>.
+              </h2>
+              <p className="empty-subtitle">
+                Type below, or tap a suggestion to get the conversation going.
+              </p>
+              <div className="empty-suggestions">
+                {QUICK_REPLIES.map((q) => (
+                  <button
+                    key={q}
+                    className="empty-suggestion"
+                    onClick={() => setInput(q)}
+                    type="button"
+                  >
+                    <span className="empty-suggestion-arrow">→</span>
+                    {q}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {messages.map((m) => (
@@ -231,8 +326,8 @@ export default function Chat() {
                     {m.from === "ai" && "Jake"}
                     {m.from === "human" && "Team"}
                   </span>
-                  <span className="message-time">
-                    {new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  <span className="message-time" title={new Date(m.timestamp).toLocaleString()}>
+                    {formatRelativeTime(m.timestamp, now)}
                   </span>
                   {m.latencyMs !== undefined && (
                     <span className="latency">· {m.latencyMs}ms</span>
@@ -243,15 +338,15 @@ export default function Chat() {
                       onClick={() => copyToClipboard(m.text)}
                       title="Copy message"
                     >
-                      📋
+                      Copy
                     </button>
                   )}
                 </div>
-                <div className="message-text">{m.text}</div>
+                <div className="message-text">{renderMessageText(m.text)}</div>
 
                 {verbose && m.reasoningContent && (
                   <details className="ai-thinking">
-                    <summary>🧠 AI Thinking</summary>
+                    <summary>AI Thinking</summary>
                     <pre>{m.reasoningContent}</pre>
                   </details>
                 )}
@@ -280,29 +375,52 @@ export default function Chat() {
           ))}
           {sending && (
             <div className="message ai">
-              <div className="message-avatar">J</div>
+              <div className="message-avatar thinking">J</div>
               <div className="message-body">
                 <div className="message-header">
                   <span className="message-name">Jake</span>
+                  <span className="message-time thinking-label">
+                    <span className="thinking-dot" />
+                    thinking
+                  </span>
                 </div>
-                <div className="message-text"><em>typing…</em></div>
+                <div className="message-text thinking-bubble">
+                  <span className="typing-dots"><span /></span><span /><span /><span />
+                </div>
               </div>
             </div>
           )}
           <div ref={messagesEndRef} />
+
+          {!atBottom && messages.length > 0 && (
+            <button className="jump-latest" onClick={jumpToLatest} type="button">
+              <span className="jump-latest-dot" />
+              Jump to latest
+              <span className="jump-latest-arrow">↓</span>
+            </button>
+          )}
         </div>
 
         <form className="input-row" onSubmit={handleSend}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={sendAsHuman ? "Type a message as the team…" : "Type as the lead…"}
-            disabled={sending}
-            autoFocus
-          />
-          <button type="submit" disabled={sending || !input.trim()}>
-            Send
+          <div className="input-wrap-chat">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={sendAsHuman ? "Type a message as the team…" : "Type as the lead…"}
+              disabled={sending}
+              autoFocus
+            />
+            <span className="input-hint">⏎</span>
+          </div>
+          <button type="submit" disabled={sending || !input.trim()} className="send-btn">
+            <span className="send-label">Send</span>
+            <span className="send-arrow">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="13 6 19 12 13 18" />
+              </svg>
+            </span>
           </button>
         </form>
       </div>
