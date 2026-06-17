@@ -31,6 +31,7 @@ export type StartResponse = {
 export type SendResponse = {
   reply: string;
   systemPrompt: string;
+  reasoningContent: string;
   latencyMs: number;
 };
 
@@ -40,6 +41,7 @@ export type ChatMessage = {
   text: string;
   timestamp: number;
   systemPrompt?: string;
+  reasoningContent?: string;
   latencyMs?: number;
 };
 

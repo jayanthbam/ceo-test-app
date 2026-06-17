@@ -24,8 +24,21 @@ export default function Chat() {
   const [verbose, setVerbose] = useState(false);
   const [sendAsHuman, setSendAsHuman] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [fullPromptModal, setFullPromptModal] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text).catch(() => {
+      // fallback for older browsers
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    });
+  }
 
   // Initial load
   useEffect(() => {
@@ -85,6 +98,7 @@ export default function Chat() {
         text: res.reply,
         timestamp: Date.now(),
         systemPrompt: res.systemPrompt,
+        reasoningContent: res.reasoningContent,
         latencyMs: res.latencyMs,
       };
       setMessages((m) => [...m, aiMsg]);
@@ -187,27 +201,74 @@ export default function Chat() {
           )}
           {messages.map((m) => (
             <div key={m.id} className={`message ${m.from}`}>
-              <div className="message-header">
-                {m.from === "you" && "You"}
-                {m.from === "ai" && "🤖 Jake"}
-                {m.from === "human" && "👤 Team"}
-                {m.latencyMs !== undefined && (
-                  <span className="latency"> · {m.latencyMs}ms</span>
+              <div className="message-avatar">
+                {m.from === "you" && "Y"}
+                {m.from === "ai" && "J"}
+                {m.from === "human" && "T"}
+              </div>
+              <div className="message-body">
+                <div className="message-header">
+                  <span className="message-name">
+                    {m.from === "you" && "You"}
+                    {m.from === "ai" && "Jake"}
+                    {m.from === "human" && "Team"}
+                  </span>
+                  <span className="message-time">
+                    {new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  {m.latencyMs !== undefined && (
+                    <span className="latency">· {m.latencyMs}ms</span>
+                  )}
+                  {m.from !== "you" && (
+                    <button
+                      className="copy-btn"
+                      onClick={() => copyToClipboard(m.text)}
+                      title="Copy message"
+                    >
+                      📋
+                    </button>
+                  )}
+                </div>
+                <div className="message-text">{m.text}</div>
+
+                {verbose && m.reasoningContent && (
+                  <details className="ai-thinking">
+                    <summary>🧠 AI Thinking</summary>
+                    <pre>{m.reasoningContent}</pre>
+                  </details>
+                )}
+                {verbose && m.systemPrompt && (
+                  <details className="system-prompt">
+                    <summary>📋 System Prompt</summary>
+                    <div className="prompt-actions">
+                      <button
+                        className="prompt-action-btn"
+                        onClick={() => copyToClipboard(m.systemPrompt!)}
+                      >
+                        📋 Copy
+                      </button>
+                      <button
+                        className="prompt-action-btn"
+                        onClick={() => setFullPromptModal(m.systemPrompt!)}
+                      >
+                        🔍 View Full
+                      </button>
+                    </div>
+                    <pre>{m.systemPrompt}</pre>
+                  </details>
                 )}
               </div>
-              <div className="message-text">{m.text}</div>
-              {verbose && m.systemPrompt && (
-                <details className="system-prompt">
-                  <summary>System prompt</summary>
-                  <pre>{m.systemPrompt}</pre>
-                </details>
-              )}
             </div>
           ))}
           {sending && (
             <div className="message ai">
-              <div className="message-header">🤖 Jake</div>
-              <div className="message-text"><em>typing…</em></div>
+              <div className="message-avatar">J</div>
+              <div className="message-body">
+                <div className="message-header">
+                  <span className="message-name">Jake</span>
+                </div>
+                <div className="message-text"><em>typing…</em></div>
+              </div>
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -227,6 +288,32 @@ export default function Chat() {
           </button>
         </form>
       </div>
+
+      {fullPromptModal !== null && (
+        <div className="modal-overlay" onClick={() => setFullPromptModal(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>📋 System Prompt (Full)</h2>
+              <div className="modal-actions">
+                <button
+                  className="prompt-action-btn"
+                  onClick={() => copyToClipboard(fullPromptModal)}
+                >
+                  📋 Copy
+                </button>
+                <button
+                  className="modal-close"
+                  onClick={() => setFullPromptModal(null)}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <pre className="modal-pre">{fullPromptModal}</pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
